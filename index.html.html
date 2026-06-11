@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Faulty Fill Valve Matching Game</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f5f3;
+    color: #1a1a18;
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: #1a1a18;
+  }
+  .subtitle {
+    font-size: 14px;
+    color: #6b6b67;
+    margin-bottom: 1.5rem;
+  }
+  .columns {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+  .col-header {
+    font-size: 12px;
+    font-weight: 500;
+    color: #6b6b67;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 10px;
+  }
+  .card {
+    background: #fff;
+    border: 1.5px solid #e0dfd8;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #1a1a18;
+    cursor: grab;
+    user-select: none;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+  }
+  .card:active { cursor: grabbing; transform: scale(1.02); }
+  .card.dragging { opacity: 0.4; }
+  .card.correct {
+    border-color: #3B6D11;
+    background: #EAF3DE;
+    color: #3B6D11;
+    cursor: default;
+    pointer-events: none;
+  }
+  .card.wrong-flash {
+    border-color: #A32D2D;
+    background: #FCEBEB;
+    animation: shake 0.35s ease;
+  }
+  @keyframes shake {
+    0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)}
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 4px;
+    padding: 2px 7px;
+    margin-right: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .badge-sym  { background: #EEEDFE; color: #3C3489; }
+  .badge-cause{ background: #E1F5EE; color: #0F6E56; }
+  .badge-act  { background: #FAEEDA; color: #633806; }
+  .drop-zone {
+    min-height: 68px;
+    border: 1.5px dashed #d0cfc8;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #a0a09a;
+    font-size: 12px;
+    transition: border-color 0.15s, background 0.15s;
+    padding: 8px;
+  }
+  .drop-zone.drag-over { border-color: #378ADD; background: #E6F1FB; }
+  .drop-zone.has-card  { padding: 0; border-style: solid; border-color: #e0dfd8; }
+  .bank {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+    border-top: 0.5px solid #e0dfd8;
+    padding-top: 12px;
+  }
+  .status-bar {
+    text-align: center;
+    margin-top: 1.5rem;
+  }
+  .score { font-size: 14px; color: #6b6b67; }
+  .score strong { color: #1a1a18; }
+  .win-msg {
+    font-size: 16px;
+    font-weight: 500;
+    color: #1D9E75;
+    margin-top: 8px;
+    display: none;
+  }
+  .top-bar {
+    max-width: 860px;
+    margin: 0 auto 1.5rem;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  button {
+    font-size: 13px;
+    font-family: inherit;
+    background: #fff;
+    border: 0.5px solid #b0b0a8;
+    border-radius: 8px;
+    padding: 6px 14px;
+    cursor: pointer;
+    color: #1a1a18;
+    transition: background 0.15s;
+  }
+  button:hover { background: #f0efea; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div>
+    <h1>Faulty Fill Valve Matching Game</h1>
+    <p class="subtitle">Drag the scrambled cards in columns B and C to match each symptom in column A.</p>
+  </div>
+  <button onclick="resetGame()">↺ Reset</button>
+</div>
+
+<div class="columns">
+  <div>
+    <div class="col-header">A — Symptom</div>
+    <div id="col-a"></div>
+  </div>
+  <div>
+    <div class="col-header">B — Root Cause</div>
+    <div id="col-b-drops"></div>
+    <div class="bank" id="col-b-bank"></div>
+  </div>
+  <div>
+    <div class="col-header">C — Immediate Action</div>
+    <div id="col-c-drops"></div>
+    <div class="bank" id="col-c-bank"></div>
+  </div>
+</div>
+
+<div class="status-bar">
+  <p class="score">Matched: <strong id="match-count">0</strong> / 6</p>
+  <p class="win-msg" id="win-msg">🎉 All matched! Great work!</p>
+</div>
+
+<script>
+const symptoms = [
+  { id: 's1', label: '1', text: 'Water is running constantly into the overflow tube' },
+  { id: 's2', label: '2', text: 'Hissing sound, but the water level is normal' },
+  { id: 's3', label: '3', text: 'Water leaks from the bottom of the tank shank' },
+];
+const causes = [
+  { id: 'cA', label: 'A', text: 'Failed shank washer or cracked plastic threads', matchTo: 's3' },
+  { id: 'cB', label: 'B', text: 'The float cup is set too high / out of adjustment', matchTo: 's1' },
+  { id: 'cC', label: 'C', text: 'Silt/debris trapped under the valve cap seal', matchTo: 's2' },
+];
+const actions = [
+  { id: 'aX', label: 'X', text: 'Flush the valve (twist the cap off, hold a cup over it, cycle the water line).', matchTo: 's2' },
+  { id: 'aY', label: 'Y', text: 'Lock down the water supply and replace the entire fill valve unit.', matchTo: 's3' },
+  { id: 'aZ', label: 'Z', text: 'Turn the adjustment screw counterclockwise to lower the water level.', matchTo: 's1' },
+];
+
+let dragSrc = null;
+let matched = 0;
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function makeCard(item, isSymptom) {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.dataset.id = item.id;
+  if (item.matchTo) div.dataset.matchTo = item.matchTo;
+  const bCls = isSymptom ? 'badge-sym' : (item.label <= 'C' ? 'badge-cause' : 'badge-act');
+  div.innerHTML = `<span class="badge ${bCls}">${item.label}</span><span>${item.text}</span>`;
+  if (!isSymptom) {
+    div.draggable = true;
+    div.addEventListener('dragstart', onDragStart);
+    div.addEventListener('dragend', onDragEnd);
+  }
+  return div;
+}
+
+function makeDropZone(rowIndex) {
+  const dz = document.createElement('div');
+  dz.className = 'drop-zone';
+  dz.dataset.row = rowIndex;
+  dz.dataset.symptomId = symptoms[rowIndex].id;
+  dz.textContent = 'drop here';
+  dz.addEventListener('dragover', onDragOver);
+  dz.addEventListener('dragleave', onDragLeave);
+  dz.addEventListener('drop', onDrop);
+  return dz;
+}
+
+function onDragStart(e) {
+  dragSrc = e.currentTarget;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', e.currentTarget.dataset.id);
+}
+
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  const dz = e.currentTarget;
+  dz.classList.remove('drag-over');
+  if (!dragSrc || dz.classList.contains('has-card')) return;
+
+  const targetSymptomId = dz.dataset.symptomId;
+  const correctSymptomId = dragSrc.dataset.matchTo;
+
+  if (targetSymptomId === correctSymptomId) {
+    dragSrc.classList.add('correct');
+    dragSrc.draggable = false;
+    dragSrc.classList.remove('dragging');
+    dz.classList.add('has-card');
+    dz.textContent = '';
+    dz.appendChild(dragSrc);
+    matched++;
+    document.getElementById('match-count').textContent = matched;
+    if (matched === 6) document.getElementById('win-msg').style.display = 'block';
+  } else {
+    dragSrc.classList.add('wrong-flash');
+    setTimeout(() => dragSrc && dragSrc.classList.remove('wrong-flash'), 400);
+  }
+  dragSrc = null;
+}
+
+function buildGame() {
+  document.getElementById('col-a').innerHTML = '';
+  symptoms.forEach(s => document.getElementById('col-a').appendChild(makeCard(s, true)));
+
+  document.getElementById('col-b-drops').innerHTML = '';
+  document.getElementById('col-c-drops').innerHTML = '';
+  symptoms.forEach((_, i) => {
+    const bw = document.createElement('div');
+    bw.appendChild(makeDropZone(i));
+    document.getElementById('col-b-drops').appendChild(bw);
+
+    const cw = document.createElement('div');
+    cw.appendChild(makeDropZone(i));
+    document.getElementById('col-c-drops').appendChild(cw);
+  });
+
+  document.getElementById('col-b-bank').innerHTML = '';
+  document.getElementById('col-c-bank').innerHTML = '';
+  shuffle(causes).forEach(c => document.getElementById('col-b-bank').appendChild(makeCard(c, false)));
+  shuffle(actions).forEach(a => document.getElementById('col-c-bank').appendChild(makeCard(a, false)));
+}
+
+function resetGame() {
+  matched = 0;
+  document.getElementById('match-count').textContent = 0;
+  document.getElementById('win-msg').style.display = 'none';
+  buildGame();
+}
+
+buildGame();
+</script>
+</body>
+</html>
